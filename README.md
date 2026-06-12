@@ -1,288 +1,639 @@
 # AI Lead Qualification Pipeline
 
-## Overview
+I didn't have a good automation project I could show, so I built this. It's a lead qualification system that takes the most tedious part of sales, reading, scoring leads and handling them automatically.
 
-This is a production-grade lead automation system built to answer REWORK's four core evaluation requirements. The pipeline removes manual lead review from sales entirely — reducing 3–5 minutes of manual work per lead to ~5 seconds of automated processing.
+Here's what it does: A lead comes through your form. Normally, someone spends 3–5 minutes reading it, scoring it, logging it to your CRM, and notifying the team. This pipeline does all of that in about 5 seconds. Automatically. No human involved.
+
+---
+## Quick Navigation
+ 
+**REWORK Eval Questions:**
+- [Feature 1: Verifiable Project Review](#proof--evidence)
+- [Feature 2: Error Handling Architecture](#failure-recovery-workflow)
+- [Feature 3: Asynchronous Documentation](#for-your-team-non-technical-explanation)
+- [Feature 4: Timeout Fix](#the-timeout-problem--how-i-fixed-it)
+**Other Sections:**
+- [How It Works](#how-it-actually-works)
+- [The Stack](#the-stack)
+- [Getting Started](#getting-started)
+- [API Endpoints](#the-endpoints-you-can-use)
+- [Evidence & Screenshots](#evidence-checklist)
+---
+
+## Proof & Evidence
+
+Before I walk you through the details, here's the proof:
+
+**Screenshots:**
+- Airtable records with AI scores
+- Real Slack alerts with lead data + AI reasoning
+- Processing logs showing Step 1/3 → Step 2/3 → Step 3/3 → DONE
+- Shows /stats output with lead count, qualification breakdown, time saved
+
+**[View all screenshots below ↓](#evidence-checklist)**
+
+**The Stack:**
+- FastAPI (webhook handler)
+- SQLite (persistent database)
+- Groq AI (lead scoring)
+- Airtable (CRM storage)
+- Slack (team notifications)
+
+**Verifiable ROI Metric:**
+- Manual lead review: 3–5 minutes per lead
+- Automated review: ~5 seconds per lead
+- Time saved: 97% faster
+- For 100 leads/week: Saves 8+ hours/week (one full workday)
+- For 500 leads/week: Saves 40+ hours/week (one full-time employee)
+---
+
+## How It Actually Works
+
+A potential customer fills out your form: "Hi, we're a 200-person SaaS company looking to automate our sales process. Budget is $50k, and we want to start this month."
+This hits the webhook, saves the lead to a database immediately and response sent back to the form in milliseconds. The user sees "Got it, we're processing your request."
+Meanwhile, in the background, completely separate from that HTTP request, the actual pipeline works.
+
+### Step 1: AI Lead Scoring
+
+The system sends the lead details to Groq to check if this is a hot prospect or not?"
+
+The AI reads it, looks at company size, budget, timeline and returns a score (0–100) and a classification (Hot, Warm, or Cold). It also explains its reasoning in a sentence or two.
+
+If Groq is slow, the system waits one second and retries the request. If the second attempt fails, it applies a longer delay before making a third attempt. If all three attempts fail, the request is marked as failed and logged for review.
+
+### Step 2: Log to Your CRM
+
+Now the system puts that scored lead into Airtable (your CRM). The full record appears: name, email, company, what they said, the AI's score, the classification, the reasoning.
+
+### Step 3: Notify the Team
+
+A Slack message fires to your sales channel.
+
+```
+🔥 New Lead: Hot (85/100)
+Name: John Smith        Email: john@techcorp.com
+Company: TechCorp Inc   Score: 85/100
+
+AI Reasoning:
+Large company with clear budget and immediate timeline — 
+high probability close.
+```
+
+The emoji signals urgency. 🔥 for hot, ☀️ for warm, ❄️ for cold.
 
 ---
 
-## Feature 1: Verifiable Project Review
+## Failure Recovery Workflow
 
-### The Proof: Screenshots & Real Metrics
+Here's how the system handles failures and prevents data loss when services become unavailable.
 
-**Project Evidence:**
-- Terminal logs showing end-to-end processing flow (below)
-- Airtable CRM records with AI scores and qualifications
-- Slack notification with formatted lead data
-- `/stats` endpoint showing ROI calculation
+### How the System Handles API Failures
 
-### Stack Used
 ```
-Webhook Receiver      → FastAPI
-Persistent Storage    → SQLite (zero-config)
-AI Scoring           → Groq API (llama-3.1-8b-instant, free tier)
-CRM Storage          → Airtable (free tier)
-Real-time Alerts     → Slack Incoming Webhooks (free)
+Lead arrives & gets saved to SQLite immediately
+(Source of truth — lead is safe)
+        ↓
+Background Worker starts processing
+        ↓
+        ┌─────────────────────────────────────┐
+        │ ATTEMPT 1: Call Groq AI for scoring │
+        └──────────────┬──────────────────────┘
+                       │
+            ┌──────────┴──────────┐
+            ↓                     ↓
+         SUCCESS            FAILS (timeout, rate limit, error)
+            │                     │
+            │              Wait 1 second
+            │                     │
+            │         ┌──────────────────────────┐
+            │         │ ATTEMPT 2: Call Groq AI  │
+            │         └──────────┬───────────────┘
+            │                    │
+            │         ┌──────────┴──────────┐
+            │         ↓                     ↓
+            │      SUCCESS            FAILS AGAIN
+            │         │                     │
+            │         │              Wait 2 seconds
+            │         │                     │
+            │         │         ┌──────────────────────────┐
+            │         │         │ ATTEMPT 3: Call Groq AI  │
+            │         │         └──────────┬───────────────┘
+            │         │                    │
+            │         │         ┌──────────┴──────────┐
+            │         │         ↓                     ↓
+            │         │      SUCCESS            FAILS 3 TIMES
+            │         │         │                     │
+            └─────────┴────┐    │                     │
+                           ↓    ↓                     ↓
+                      Move to Step 2            Mark as FAILED
+                  (Log to Airtable)             in SQLite
+                           │                     │
+                    ┌──────┴────────┐             │
+                    ↓               ↓             │
+                 SUCCESS          FAILS      Send Slack Alert:
+                    │                │       "Lead John Smith failed"
+                    │          Move to       │
+                    │          FAILED        Team can click to retry
+                    │                │       OR fix the issue
+                    │         ┌──────┘
+                    │         ↓
+                    │      Move to Step 3
+                    │  (Send Slack notification)
+                    │         │
+                    │    ┌────┴────┐
+                    │    ↓         ↓
+                    │ SUCCESS    FAILS
+                    │    │          │
+                    │    │    Retry 3x
+                    │    │    If all fail:
+                    │    │    Mark as failed
+                    │    │
+                    └────┴──→ Update SQLite
+                              Status = DONE
+                              
+(At any point, if server crashes, unfinished leads
+ are automatically recovered on restart)
 ```
 
-### Verifiable ROI Metrics
+### How This Prevents Data Loss
 
-**Time Saved Per Lead:**
-- Manual qualification: 3–5 minutes
-- Automated qualification: ~5 seconds
-- Time reduction: 97% faster
+**Scenario 1: Rate Limit from Groq**
+```
+You submit 50 leads in a minute.
+Groq starts rate-limiting.
 
-**Weekly Time Savings (100 leads/week):**
-- Manual hours: 8.3 hours/week
-- Automated hours: 0.08 hours/week
-- **Savings: 8+ hours per week (~1 full workday)**
+With retry and persistence:
+- The webhook times out immediately
+- Leads may be lost before processing begins
 
-**Cost per Lead:**
-- Manual: $2–5 (salary cost)
-- Automated: ~$0.01 (API calls)
-- **Cost reduction: 99.8%**
+With retry and persistence:
+- All 50 leads are already in SQLite ✓
+- Worker tries Groq (fails with 429)
+- Waits 1 second, tries again (fails)
+- Waits 2 seconds, tries again (succeeds, Groq rate limit resolved)
+- All 50 leads get processed So Nthing lost. ✓
+```
 
-**Quality Improvement:**
-- Manual scoring: Inconsistent (human fatigue, bias)
-- Automated scoring: Consistent, repeatable
-- Lead loss: Reduced from ~5% to <0.1%
+**Scenario 2: Airtable Timeout**
+```
+You submit a lead.
+Airtable is slow that moment (10+ second response).
 
-### Evidence Files (Add to Repo):
-1. `screenshots/airtable-records.png` — CRM showing filled lead records with scores
-2. `screenshots/slack-notifications.png` — Formatted team alerts
-3. `screenshots/terminal-logs.png` — Processing flow (Step 1/3 → Step 2/3 → Step 3/3 → DONE)
-4. `screenshots/stats-endpoint.json` — `/stats` output showing lead count + time saved
+Without retry and persistence:
+- Webhook is still waiting for Airtable
+- Browser timeout after 30 seconds
+- Lead is lost (no record in your database)
+
+With retry and persistence:
+- Lead is already in SQLite immediately ✓
+- Groq scoring completes (works fine)
+- Airtable call starts but is slow
+- Worker retries (1s wait, try again)
+- Airtable responds, lead is logged ✓
+- Even if Airtable was completely down:
+  - Lead is still in SQLite marked as "failed"
+  - Slack alerts the team
+  - When Airtable comes back, team retries manually
+  - Lead is never lost. ✓
+```
+
+**Scenario 3: Server Crashes Mid-Process**
+```
+You submit a lead.
+Lead gets scored (done).
+Lead is being logged to Airtable (in progress).
+SERVER CRASHES.
+
+Without retry and persistence:
+- Lead may be lost in transit.
+
+With retry and persistence:
+- Lead is in SQLite with status="processing"
+- Server restarts
+- Recovery logic runs
+- Those 3 leads are automatically re-queued
+- They continue from where they left off
+- All complete successfully ✓
+```
+
+### ### Three Rules for Preventing Data Loss
+
+**Rule 1: Persist First**
+Every lead goes to SQLite BEFORE any external API calls. No matter what happens, Leads are safe
+
+**Rule 2: Retry Intelligently**
+Every external service call has 3 attempts with exponential backoff (wait 1s, then 2s, then 4s). This catches:
+- Network hiccups (resolved in <1s)
+- Rate limits (resolved in 1–4s)
+- Temporary service issues (resolved in a few seconds)
+
+**Rule 3: Alert on Failure**
+If all 3 retries fail, the lead is marked as failed and your team gets a Slack alert. You can then:
+- Manually retry (click a button)
+- Fix the issue (e.g., update your Slack webhook URL if it's wrong)
+- Investigate (e.g., is Airtable API broken?)
+
+No leads disappear into a void. Everything is visible.
+
+### Reliability Features in Production
+
+**Dead Letter Queue:**
+Leads that fail all retries sit in SQLite with status="failed". Your team can query them anytime:
+```
+GET /leads/failed
+
+Returns all failed leads with error messages so you know what went wrong.
+```
+
+**Manual Retry:**
+For a specific failed lead:
+```
+POST /leads/42/retry
+
+The lead gets re-queued and processing starts again. Once the issue is fixed
+(e.g., Airtable is back up), it succeeds.
+```
+
+**Crash Recovery:**
+On startup, the system checks for stuck leads:
+```python
+stuck = db.get_stuck_leads()  # Status = pending or processing
+# Re-queue all of them automatically
+```
+
+**Monitoring:**
+```
+GET /stats
+
+Shows you:
+- Total leads processed
+- How many are done
+- How many failed
+- How many are currently processing
+```
 
 ---
 
-## Feature 2: Error Handling Architecture
+## Architecture Overview
 
-### The Proof: Logic Diagram & Production Safeguards
+Let me show you how this all fits together.
 
-**Production-Grade Error Handling:**
+### What You See 
 
 ```
-Lead Receives → Persist to SQLite (Source of Truth)
-                ↓
-            Background Worker
-                ↓
-        ┌───────┴───────┐
-        ↓               ↓
-    Groq API    (Attempt 1: Retry on fail)
-    Backoff 1s         ↓
-    Attempt 2       Airtable API
-    Backoff 2s    (Attempt 1: Retry on fail)
-    Attempt 3         ↓
-        ↓          Backoff 1s
-    Success?       Attempt 2
-        ↓          Backoff 2s
-        └──→ Update SQLite   Attempt 3
-             (done)              ↓
-                             Success?
-                                ↓
-                    ┌───────────┴──────────────┐
-                    ↓                          ↓
-                Slack API              Dead Letter Queue
-                (Attempt 1)            (Failed Status)
-                Backoff 1s             Alert to Slack
-                Attempt 2              Manual Retry
-                Backoff 2s             Endpoint
-                Attempt 3
-                    ↓
-                Success?
-                    ↓
-            Update SQLite (Done)
+Lead submitted via form
+        ↓
+Webhook receives it
+        ↓
+Save to database (5 milliseconds)
+        ↓
+Return response to form
+        ↓
+User sees "Your request is being processed"
+        ↓
+Process continues asynchronously
 ```
 
-### What Prevents Data Loss
+### Background Processing Flow
 
-**Layer 1: Persistence First**
-- Lead saved to SQLite BEFORE any external calls
-- Database is source of truth
-- If server crashes mid-process, lead is recovered on restart
-
-**Layer 2: Retry Logic on Every Service**
 ```
-For each external call (Groq, Airtable, Slack):
-  Attempt 1: Call service (timeout: 30s)
-  If fails → wait 1 second → Attempt 2
-  If fails → wait 2 seconds → Attempt 3
-  If fails → mark as "failed" in SQLite
+Worker picks up the lead from the queue
+        ↓
+Call Groq AI for scoring (usually 2–3 seconds)
+   If it fails: retry with backoff
+        ↓
+Log to Airtable (usually 1 second)
+   If it fails: retry with backoff
+        ↓
+Send Slack notification (usually 0.5 seconds)
+   If it fails: retry with backoff
+        ↓
+Update database with final status
+        ↓
+Done. Lead is fully processed.
 ```
 
-**Layer 3: Dead Letter Queue**
-- Failed leads sit in SQLite with status="failed"
-- Failure alert fires to Slack
-- Team can manually retry via `POST /leads/{id}/retry`
+Total time in the background: about 4 seconds.
 
-**Layer 4: Crash Recovery**
-- On server startup, check for stuck leads (status="pending" or "processing")
-- Automatically re-queue them
-- No data loss from server crashes
+## The Timeout Problem & How I Fixed It
 
-### Rate Limit & Timeout Handling
+This is the core architectural decision that prevents the 10% failure rate.
 
-**Groq Rate Limits:**
-- Exponential backoff (1s → 2s → 4s) prevents hammering
-- Most rate limits resolve within 2–4 seconds
-- If all retries fail, lead moves to dead letter queue
+### Synchronous (Blocking) Flow
 
-**HubSpot Timeouts (Example):**
-- Groq takes 8 seconds? No problem — webhook returned at 10ms
-- HubSpot times out? Retry logic catches it
-- Lead never lost because it's in SQLite first
+**Scenario:** Webhook → OpenAI Scoring → HubSpot. Fails 10% of the time.
 
-### Evidence File:
-- `architecture/error-handling-diagram.md` — Logic flow (above)
-- Code examples in `main.py` and `services/*.py` showing retry logic
-
----
-
-## Feature 3: Asynchronous Documentation
-
-### The Proof: Documentation + Optional Video
-
-**Written Documentation:**
-
-You're reading it. This README explains:
-- How the system works end-to-end
-- What happens at each stage (T=0ms to T=4s)
-- How async architecture prevents timeouts
-- Error handling for each failure scenario
-
-**System Walkthrough (Step-by-Step):**
-
-1. **T=0ms** — Form submitted, webhook receives lead
-2. **T=5ms** — Lead persisted to SQLite (source of truth)
-3. **T=10ms** — Webhook returns instantly to caller (no waiting)
-4. **T=15ms–T=2s** — Background worker scores lead via Groq AI
-5. **T=2s–T=3s** — Lead logged to Airtable CRM
-6. **T=3s–T=4s** — Slack notification sent to team
-7. **T=4s** — Status marked "done" in SQLite
-
-**Non-Technical Explanation:**
-
-For a sales team: "A lead comes in through your form. We instantly save it to our database. Then, in the background, we ask AI to score it, put it in your CRM, and notify your team. The whole thing takes ~4 seconds, and you never lose a lead — even if something breaks."
-
-### Optional: Loom Video
-Create a 5–10 minute walkthrough showing:
-1. Submit a test lead via curl
-2. Show SQLite storing the lead
-3. Show background processing logs (Step 1/3 → Step 2/3 → Step 3/3)
-4. Show Airtable record appearing
-5. Show Slack notification
-6. Show `/stats` endpoint with time saved
-
-Link: `[Insert Loom URL here]`
-
----
-
-## Feature 4: System Review Scenario — The Timeout Fix
-
-### The Problem
-
-A lead capture pipeline fails ~10% of the time:
+**The Flow:**
 ```
-Form Submission
-    ↓
-Webhook receives lead
-    ↓
-Call OpenAI (takes 6–8 seconds)
-    ↓
-Call HubSpot (takes 2–3 seconds, sometimes times out)
-    ↓
+User submits form
+        ↓
+Webhook receives request (browser waiting, timeout clock starts)
+        ↓
+Call OpenAI API for scoring
+   (takes 2–8 seconds, sometimes >30s)
+        ↓
+Wait for OpenAI response (browser still waiting)
+        ↓
+Call HubSpot API to log lead
+   (takes 1–3 seconds, sometimes times out)
+        ↓
+Wait for HubSpot response
+        ↓
 Call Slack
-    ↓
-Return response
+        ↓
+Return response to user
+   (Total time: 10–20+ seconds)
+
+If OpenAI takes >30s or HubSpot times out → entire request fails
+If something fails mid-chain → lead data is lost (not in any database)
 ```
 
-**Why it fails:** Total time is 10+ seconds. Most webhooks have a 30-second timeout. If OpenAI is slow or HubSpot has a hiccup, you hit the limit. Client drops connection. Lead is lost.
+**Why it fails 10% of the time:**
+- Most webhooks have a 30-second timeout limit
+- OpenAI sometimes takes 6–10 seconds
+- HubSpot sometimes takes 3–5 seconds
+- Add network latency and it can go upto 15 seconds
+- If any service is slow, you can hit 30+ seconds and timeout
+- Browser closes connection
+- Lead is lost
 
-### The Solution: Decouple Receipt from Processing
+---
 
+### Asynchronous Queue-Based Approach
+
+**The Key Insight:** Don't make the webhook do all the work. Make it save the data and queue the work.
+
+**Architecture:**
 ```
-Form Submission
-    ↓
-Webhook receives lead
-    ↓
-Step 1: Persist to SQLite ← SYNCHRONOUS, ALWAYS SUCCEEDS
-    ↓
-Step 2: Queue background task ← QUEUED, RETURNS IMMEDIATELY
-    ↓
-Step 3: Return {"status": "received"} ← RESPONDS IN <100ms
-    ↓
-(CALLER IS DONE — NO TIMEOUT RISK)
+User submits form
+        ↓
+Webhook receives request (browser waiting, timeout clock starts)
+        ↓
+STEP 1: Save lead to SQLite (5 milliseconds)
+        ↓
+STEP 2: Queue background task (5 milliseconds)
+        ↓
+STEP 3: Return response to user (10 milliseconds total)
+        ↓
+USER GETS RESPONSE INSTANTLY
+(Caller is done. No more waiting.)
 
-Meanwhile, in background (completely independent):
-    ↓
-Call OpenAI (takes 6–8 seconds, caller doesn't wait)
-    ↓
-Call HubSpot (takes 2–3 seconds, with auto-retry if it fails)
-    ↓
-Call Slack
-    ↓
+Meanwhile, completely separate from the webhook:
+        ↓
+Background worker picks up queued lead
+        ↓
+Call OpenAI API for scoring (takes 2–8 seconds, no timeout pressure)
+        ↓
+Call HubSpot API to log lead (takes 1–3 seconds, with auto-retry)
+        ↓
+Call Slack (with auto-retry)
+        ↓
 Update SQLite with final status
+        ↓
+Done.
 ```
 
-### Key Difference
+**Total webhook response time: <100 milliseconds (never times out)**
 
-**Old (Synchronous):**
-- Webhook waits for all calls to complete
-- 10+ seconds total
-- If any call fails, entire thing fails
-- Lead might be lost
-
-**New (Asynchronous):**
-- Webhook persists and returns instantly
-- Caller gets response in <100ms
-- Processing happens in background
-- If processing fails, lead is in SQLite forever
-- Automatic retry with exponential backoff
-
-### Architecture Diagram
-
-```
-┌─────────────────────────────────────────┐
-│ Webhook: /webhook/lead                  │
-├─────────────────────────────────────────┤
-│ 1. Save to SQLite (5ms)                 │
-│ 2. Queue task (5ms)                     │
-│ 3. Return response (10ms)               │
-└──────────────┬──────────────────────────┘
-               │
-        (Caller gets response, continues)
-               │
-       ┌───────▼─────────────────┐
-       │ Background Worker Task  │
-       ├────────────────────────┤
-       │ Groq Score    (2s)     │
-       │ Airtable Log  (1s)     │
-       │ Slack Notify  (1s)     │
-       │ Update Status (0.1s)   │
-       └────────────────────────┘
-       (Total: ~4s, no timeout risk)
-```
-
-### Why This Works at Scale
-
-1. **No Timeout Risk:** Webhook returns in milliseconds
-2. **No Data Loss:** Lead in SQLite before external calls
-3. **Scalable:** 100 leads can be queued in a second
-4. **Recoverable:** Server crash doesn't lose anything
-5. **Retryable:** Failed leads automatically retry
-
-### Production Upgrade Path
-
-For high-volume environments:
-- Replace `BackgroundTasks` with Redis queue
-- Add Celery workers for parallel processing
-- Same pattern, enterprise-grade infrastructure
+**Total processing time: 4–12 seconds (happens in background)**
 
 ---
 
-## Setup & Testing
+### Visual Comparison
 
-### 1. Install Dependencies
+**Old Approach (Sync - Fails 10%):**
+```
+Request Timeline:
+├─ 0ms: Webhook receives
+├─ 500ms: Calling OpenAI...
+├─ 6500ms: OpenAI responds
+├─ 6500ms: Calling HubSpot...
+├─ 9500ms: HubSpot responds
+├─ 9500ms: Calling Slack...
+├─ 10500ms: Slack responds
+└─ 10500ms: Response sent (but browser already timed out at 30s if OpenAI was slow)
+
+Data Loss Risk: HIGH
+Timeout Risk: HIGH
+```
+
+**New Approach (Async):**
+```
+Webhook Response Timeline:
+├─ 0ms: Webhook receives
+├─ 5ms: Save to SQLite
+├─ 10ms: Queue task
+└─ 10ms: Return response ✓ (caller is done)
+
+Background Processing Timeline (Independent):
+├─ 15ms: Worker picks up lead
+├─ 100ms: Calling OpenAI...
+├─ 6100ms: OpenAI responds
+├─ 6100ms: Calling HubSpot...
+├─ 9100ms: HubSpot responds
+├─ 9100ms: Calling Slack...
+├─ 10100ms: Slack responds
+├─ 10101ms: Update SQLite
+└─ 10101ms: Status = DONE
+
+Data Loss Risk: ZERO (in SQLite first)
+Timeout Risk: ZERO (webhook already returned)
+```
+
+---
+
+### Step-by-Step Re-Architecture
+
+**What Changed:**
+
+1. **Persistence First**
+   - OLD: All work happens synchronously in the webhook
+   - NEW: Lead is persisted to SQLite BEFORE any external calls
+   - BENEFIT: Lead is safe even if everything downstream fails
+
+2. **Async Processing**
+   - OLD: Webhook waits for all API calls to complete
+   - NEW: Webhook queues work and returns immediately
+   - BENEFIT: Caller never times out
+
+3. **Intelligent Retries**
+   - OLD: If OpenAI fails, entire request fails
+   - NEW: If OpenAI fails, auto-retry 3 times with exponential backoff
+   - BENEFIT: Transient failures are caught and resolved
+
+4. **Dead Letter Queue**
+   - OLD: If HubSpot is down, lead is lost
+   - NEW: Failed lead sits in SQLite marked "failed", team is alerted
+   - BENEFIT: Lead can be retried manually when service is back up
+
+5. **Crash Recovery**
+   - OLD: Server crashes mid-process, lead is lost
+   - NEW: Server startup automatically re-queues any stuck leads
+   - BENEFIT: No data loss from server restarts
+
+---
+
+### Code-Level Implementation (Simplified)
+
+**Old Way (Synchronous):**
+```python
+@app.post("/webhook/lead")
+def receive_lead(lead: Lead):
+    # All blocking calls in the request cycle
+    score = call_openai(lead)  # Waits (2–8s)
+    log_to_hubspot(score)       # Waits (1–3s)
+    send_slack_alert(score)     # Waits (0.5s)
+    return {"status": "success"}
+    
+# Total: 10–20+ seconds
+# If any call fails, lead is lost
+```
+
+**New Way (Asynchronous):**
+```python
+@app.post("/webhook/lead")
+async def receive_lead(lead: Lead, background_tasks: BackgroundTasks):
+    # Step 1: Persist (always succeeds)
+    lead_id = db.save_lead(lead)
+    
+    # Step 2: Queue work (returns immediately)
+    background_tasks.add_task(process_lead, lead_id)
+    
+    # Step 3: Return response (caller is done)
+    return {"status": "received", "lead_id": lead_id}
+
+# Total webhook time: <100ms
+# Lead is safe in database
+# Processing happens independently
+
+async def process_lead(lead_id: int):
+    # All blocking calls happen here, outside the request cycle
+    score = call_openai_with_retry(lead)  # 2–8s, with retries
+    log_to_hubspot_with_retry(score)      # 1–3s, with retries
+    send_slack_with_retry(score)          # 0.5s, with retries
+    db.update_status(lead_id, "done")
+    
+# Takes 4–12 seconds total, but webhook caller doesn't wait
+```
+
+---
+
+### Why This Architecture Never Fails on Timeouts
+
+Webhook returns before making any external API calls and caller always gets response <100ms, never hits timeout.
+
+---
+
+### Production Deployment Upgrade Path
+
+This implementation uses FastAPI's `BackgroundTasks`. For even higher reliability at scale, replace with:
+
+**Redis Queue + Celery Workers:**
+```
+Webhook → Save to SQLite → Push to Redis Queue → Return instantly
+                                    ↓
+                    Celery Workers (scalable)
+                         ↓
+                   Process lead from queue
+                   (same logic, but distributed)
+```
+
+Same pattern, but with:
+- Persistent queue (survives server restarts)
+- Multiple workers (process in parallel)
+- Built-in monitoring (Flower dashboard)
+- Better at handling high volume
+
+But the core principle remains the same.
+
+---
+
+## The Stack
+
+I kept it simple and cheap:
+
+- **API Layer:** FastAPI (handles the webhook, super fast)
+- **Database:** SQLite (stores leads, deduplication, recovery state)
+- **AI Scoring:** Groq (free tier, same models as expensive providers)
+- **CRM:** Airtable (free tier, visual, easy to share with your team)
+- **Notifications:** Slack webhooks (free, instant alerts)
+
+Everything runs on a single server and It has no complicated infrastructure.
+
+---
+
+## For Your Team (Non-Technical Explanation)
+
+Here's how to explain this to your sales manager, CEO, or anyone who doesn't care about code:
+
+### The Simple Version
+
+**What it does:** When a customer fills out your form, an AI reads their message and decides if they're a good fit for you (Hot/Warm/Cold). Then it puts them in your CRM and alerts your sales team. All automatic. All in a few seconds.
+
+**What you used to do:** Someone reads the email. Decides if it's worth pursuing. Logs it to Airtable. Sends a Slack message. Takes 3–5 minutes per lead.
+
+**What you do now:** The system does all of that in 5 seconds. Your team jumps on hot leads instantly.
+
+**Why it matters:** If you're getting 100 leads a week, that's one person's full-time job just reading emails. This frees them up to actually talk to customers.
+
+**What if something breaks?** The system automatically retries and alerts you. No leads are ever lost. Even if the server crashes, leads are recovered automatically.
+
+### Why We Built It This Way
+
+- **Fast:** Leads get scored in seconds, not minutes
+- **Reliable:** Can't lose a lead even if something fails
+- **Simple:** No meetings needed. It just works in the background
+- **Visible:** Everything shows up in tools you already use (Airtable, Slack)
+
+---
+
+## Video Walkthrough
+
+For a live demo and explanation, watch this:
+
+**[Insert Loom Video Link Here]**
+
+In this video, you'll see:
+1. Submit a test lead via form
+2. Watch the system process it in real-time (Airtable updates, Slack fires, logs show steps)
+3. Check the stats endpoint to see ROI
+4. See what happens when something fails (automatic retry)
+
+Link: `[Your Loom URL]`
+
+
+Here's what happens when you submit a test lead:
+
+```bash
+curl -X POST https://your-public-url/webhook/lead \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sarah Chen",
+    "email": "sarah@acmecorp.com",
+    "company": "Acme Corp",
+    "message": "Interested in your platform for our 150-person team. Budget approved. Can we schedule a demo?"
+  }'
+```
+
+**The Response (instant):**
+```json
+{
+  "status": "received",
+  "lead_id": 42,
+  "message": "Lead from Sarah Chen is being processed"
+}
+```
+
+Then, a few seconds later:
+- Airtable shows a new record with a score of 88 (Hot)
+- Slack gets a notification: "🔥 New Lead: Hot (88/100)"
+
+---
+
+
+## Getting Started
+
+**1. Clone the repo**
 ```bash
 git clone <repo-url>
 cd ai-lead-pipeline
@@ -291,107 +642,79 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
+**2. Add your API keys**
 ```bash
 cp .env.example .env
-# Fill in:
-# GROQ_API_KEY
-# AIRTABLE_API_KEY
-# AIRTABLE_BASE_ID
-# SLACK_WEBHOOK_URL
+# Fill in GROQ_API_KEY, AIRTABLE_API_KEY, AIRTABLE_BASE_ID, SLACK_WEBHOOK_URL
 ```
 
-### 3. Start Server
+**3. Start the server**
 ```bash
 uvicorn main:app --reload
 ```
 
-### 4. Expose Publicly (for demo)
+**4. Make it public**
 ```bash
 ngrok http 8000
-# Copy the generated URL
 ```
 
-### 5. Test
+**5. Test it**
 ```bash
 curl -X POST https://your-ngrok-url/webhook/lead \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "John Smith",
-    "email": "john@techcorp.com",
-    "company": "TechCorp Inc",
-    "message": "We are a 200-person SaaS company. Budget $50k. Want to start ASAP."
-  }'
+  -d '{"name": "Test", "email": "test@example.com", "company": "Test Co", "message": "Testing this"}'
 ```
-
-### 6. View Results
-- Check Airtable for the new record
-- Check Slack for notification
-- Check `/stats` endpoint for ROI metric
 
 ---
 
-## API Reference
+## The Endpoints You Can Use
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/webhook/lead` | POST | Submit a lead for processing |
-| `/stats` | GET | View pipeline metrics (leads processed, time saved) |
-| `/leads/failed` | GET | List all failed leads in dead letter queue |
-| `/leads/{id}/retry` | POST | Manually retry a failed lead |
-| `/health` | GET | Health check |
-
----
-
-## Code Structure
-
-```
-ai-lead-pipeline/
-├── main.py                 # FastAPI app + webhook + background worker
-├── db.py                   # SQLite persistence layer
-├── services/
-│   ├── groq_service.py     # AI scoring (with retry)
-│   ├── airtable_service.py # CRM logging (with retry)
-│   └── slack_service.py    # Notifications (with retry)
-├── .env                    # API keys (not committed)
-└── requirements.txt        # Dependencies
-```
+**POST /webhook/lead** — submit a new lead
+**GET /stats** — see how many leads you've processed and time saved
+**GET /leads/failed** — see any leads that failed processing
+**POST /leads/{id}/retry** — manually retry a failed lead
+**GET /health** — check if the system is running
 
 ---
 
 ## Evidence Checklist
 
-To submit to REWORK, include:
+All proof is in this repo:
 
-✅ **Feature 1 (Verifiable Project):**
-- [ ] Screenshot: Airtable records with AI scores
-- [ ] Screenshot: Slack notifications
-- [ ] Screenshot: Terminal logs showing processing steps
-- [ ] JSON: `/stats` endpoint output
+**Visual Proof (Screenshots):**
 
-✅ **Feature 2 (Error Handling):**
-- [ ] Diagram: Error handling flow (included above)
-- [ ] Code: Retry logic in `services/*.py`
-- [ ] Explanation: How data is never lost
+### Airtable CRM Records
+Shows actual leads with scores (85/100 Hot, 42/100 Cold, etc.)
 
-✅ **Feature 3 (Async Documentation):**
-- [ ] README (this file)
-- [ ] Step-by-step walkthrough (above)
-- [ ] Optional: Loom video link
-
-✅ **Feature 4 (Timeout Fix):**
-- [ ] Diagram: Async architecture (above)
-- [ ] Explanation: Old vs. New comparison
-- [ ] Live demo: ngrok URL showing instant webhook response
+![Airtable Records](screenshots/airtable-records.png)
 
 ---
 
-## Summary
+### Slack Notifications
+Shows real Slack alerts with formatting and emoji
 
-This project demonstrates:
-- **Real automation** with measurable ROI (97% time reduction, 99% cost reduction)
-- **Production-grade error handling** with retry logic, dead letter queues, and crash recovery
-- **Clear async documentation** explaining how the system works to non-technical stakeholders
-- **Timeout fix solution** using async processing, eliminating timeouts and data loss
+![Slack Notifications](screenshots/slack-notifications.png)
 
-All code is on GitHub. All evidence is in screenshots. All architecture is documented.
+---
+
+### Terminal Processing Logs
+Shows processing flow: [1/3] Scoring → [2/3] Logging → [3/3] Slack → [DONE]
+
+![Terminal Logs](screenshots/terminal-logs.png)
+
+---
+
+### Stats Endpoint Output
+Shows /stats output with lead count, qualification breakdown, time saved
+
+![Stats Endpoint](screenshots/stats-endpoint.png)
+
+
+**Code:**
+- `main.py` — FastAPI webhook + background worker
+- `db.py` — SQLite persistence + recovery logic
+- `services/groq_service.py` — AI scoring with retry logic
+- `services/airtable_service.py` — CRM logging with error handling
+- `services/slack_service.py` — Notifications with fallback
+
+All code is production-grade, transparent, and ready to run.
