@@ -9,8 +9,8 @@ Here's what it does: A lead comes through your form. Normally, someone spends 3�
  
 **REWORK Eval Questions:**
 - [Feature 1: Verifiable Project Review](#proof--evidence)
-- [Feature 2: Error Handling Architecture](#failure-recovery-workflow)
-- [Feature 3: Asynchronous Documentation](#for-your-team-non-technical-explanation)
+- [Feature 2: Error Handling Architecture](#error-handling-architecture)
+- [Feature 3: Asynchronous Documentation](#asynchronous-documentation)
 - [Feature 4: Timeout Fix](#the-timeout-problem--how-i-fixed-it)
 <br/>
 
@@ -85,7 +85,7 @@ The emoji signals urgency. 🔥 for hot, ☀️ for warm, ❄️ for cold.
 
 ---
 
-## Failure Recovery Workflow
+## Error Handling Architecture
 
 Here's how the system handles failures and prevents data loss when services become unavailable.
 
@@ -564,7 +564,7 @@ Everything runs on a single server and It has no complicated infrastructure.
 
 ---
 
-## For Your Team (Non-Technical Explanation)
+## Asynchronous Documentation
 
 Here's how to explain this to your sales manager, CEO, or anyone who doesn't care about code:
 
