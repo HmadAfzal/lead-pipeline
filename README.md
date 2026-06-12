@@ -12,6 +12,7 @@ Here's what it does: A lead comes through your form. Normally, someone spends 3â
 - [Feature 2: Error Handling Architecture](#failure-recovery-workflow)
 - [Feature 3: Asynchronous Documentation](#for-your-team-non-technical-explanation)
 - [Feature 4: Timeout Fix](#the-timeout-problem--how-i-fixed-it)
+<br/>
 **Other Sections:**
 - [How It Works](#how-it-actually-works)
 - [The Stack](#the-stack)

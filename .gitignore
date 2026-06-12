@@ -50,6 +50,3 @@ ngrok.yml
 # Temporary Files
 *.tmp
 *.temp
-
-# Screenshots / Local Assets
-screenshots/
