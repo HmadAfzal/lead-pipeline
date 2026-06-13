@@ -11,7 +11,7 @@ Here's what it does: A lead comes through your form. Normally, someone spends 3â
 - [Feature 1: Verifiable Project Review](#proof--evidence)
 - [Feature 2: Error Handling Architecture](#error-handling-architecture)
 - [Feature 3: Asynchronous Documentation](#asynchronous-documentation)
-- [Feature 4: Timeout Fix](#the-timeout-problem--how-i-fixed-it)
+- [Feature 4: Timeout Fix](#timeout-problem--its-fix)
 ---
 
 ## Proof & Evidence
