@@ -5,14 +5,6 @@ A lead qualification system that takes the most tedious part of sales, reading, 
 Here's what it does: A lead comes through your form. Normally, someone spends 3–5 minutes reading it, scoring it, logging it to your CRM, and notifying the team. This pipeline does all of that in about 5 seconds. Automatically. No human involved.
 
 ---
-## Quick Navigation
- 
-**Eval Questions:**
-- [Feature 1: Verifiable Project Review](#proof--evidence)
-- [Feature 2: Error Handling Architecture](#error-handling-architecture)
-- [Feature 3: Asynchronous Documentation](#asynchronous-documentation)
-- [Feature 4: Timeout Fix](#timeout-problem--its-fix)
----
 
 ## Proof & Evidence
 
