@@ -1,6 +1,6 @@
 # AI Lead Qualification Pipeline
 
-I didn't have a good automation project I could show, so I built this. It's a lead qualification system that takes the most tedious part of sales, reading, scoring leads and handling them automatically.
+A lead qualification system that takes the most tedious part of sales, reading, scoring leads and handling them automatically.
 
 Here's what it does: A lead comes through your form. Normally, someone spends 3–5 minutes reading it, scoring it, logging it to your CRM, and notifying the team. This pipeline does all of that in about 5 seconds. Automatically. No human involved.
 
