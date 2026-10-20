@@ -188,7 +188,7 @@ Then, a few seconds later:
 
 **1. Clone the repo**
 ```bash
-git clone <repo-url>
+git clone https://github.com/HmadAfzal/lead-pipeline.git
 cd ai-lead-pipeline
 python -m venv venv
 source venv/bin/activate
