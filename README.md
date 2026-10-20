@@ -7,7 +7,7 @@ Here's what it does: A lead comes through your form. Normally, someone spends 3â
 ---
 ## Quick Navigation
  
-**REWORK Eval Questions:**
+**Eval Questions:**
 - [Feature 1: Verifiable Project Review](#proof--evidence)
 - [Feature 2: Error Handling Architecture](#error-handling-architecture)
 - [Feature 3: Asynchronous Documentation](#asynchronous-documentation)
